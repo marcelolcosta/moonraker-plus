@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tag matches manifest version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(python3 -c "import json; print(json.load(open('custom_components/moonraker_plus/manifest.json'))['version'])")
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag v$tag does not match manifest version $version"
+            exit 1
+          fi
+      - name: Build zip
+        run: |
+          cd custom_components
+          zip -r ../moonraker_plus.zip moonraker_plus -x "*/__pycache__/*"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: moonraker_plus.zip
+          generate_release_notes: true

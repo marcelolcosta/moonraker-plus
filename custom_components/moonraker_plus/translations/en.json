@@ -1,0 +1,53 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to Moonraker",
+        "description": "Enter the address of the printer's Moonraker API.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "name": "Name",
+          "api_key": "API key"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the printer.",
+          "port": "Moonraker port, usually 7125.",
+          "name": "Optional. Defaults to the printer's hostname.",
+          "api_key": "Only needed if Moonraker requires authorization for this network."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered printer",
+        "description": "Add the printer {name} at {host}?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Moonraker at that address.",
+      "invalid_auth": "Moonraker rejected the request. Check the API key.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This printer is already configured.",
+      "cannot_connect": "Could not reach Moonraker."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Printer options",
+        "data": {
+          "web_url": "Web interface URL",
+          "stream_source": "Camera stream source",
+          "macros": "Macros exposed as buttons"
+        },
+        "data_description": {
+          "web_url": "Base URL for relative webcam addresses, e.g. http://192.168.1.20 or http://192.168.1.20:4408. Defaults to http://HOST, where HOST is the printer's address.",
+          "stream_source": "Optional. Any source Home Assistant's go2rtc understands (rtsp://, webrtc:..., ffmpeg:...). Replaces the cameras from Moonraker. Creality WebRTC cameras are detected automatically.",
+          "macros": "Each selected macro becomes a button. Macros starting with _ are hidden."
+        }
+      }
+    }
+  }
+}
