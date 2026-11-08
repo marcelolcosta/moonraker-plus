@@ -252,6 +252,43 @@ class Printer:
             cmd += f" WHITE={white:.3f}"
         await self.gcode(cmd)
 
+    async def set_fan_speed(self, object_name: str, speed: float) -> None:
+        """Set a client-controllable fan (fan_generic, or the part fan "fan") to 0..1."""
+        if not 0.0 <= speed <= 1.0:
+            raise ValueError(f"{object_name}: speed {speed:g} outside 0..1")
+        prefix, _, name = object_name.partition(" ")
+        if prefix == "fan_generic":
+            await self.gcode(f"SET_FAN_SPEED FAN={name} SPEED={speed:.3g}")
+        elif object_name == "fan":
+            await self.gcode(f"M106 S{round(speed * 255)}" if speed > 0 else "M107")
+        else:
+            raise ValueError(f"{object_name} is not a client-controllable fan")
+
+    def target_limits(self, object_name: str) -> tuple[float, float]:
+        """Allowed target range for a heater or temperature_fan: 0 .. max_temp from the config."""
+        cfg = self.state.object_config(object_name)
+        default_max = 120.0 if object_name == "heater_bed" else 80.0 if " " in object_name else 300.0
+        try:
+            max_temp = float(cfg.get("max_temp", default_max))
+        except (TypeError, ValueError):
+            max_temp = default_max
+        return 0.0, max_temp
+
+    async def set_target_temperature(self, object_name: str, target: float) -> None:
+        """Set a heater's (extruder*, heater_bed, heater_generic) or temperature_fan's target in °C.
+
+        Raises ValueError outside 0..max_temp, before anything is sent.
+        """
+        low, high = self.target_limits(object_name)
+        if not low <= target <= high:
+            raise ValueError(f"{object_name}: target {target:g} °C outside {low:g}..{high:g}")
+        prefix, _, name = object_name.partition(" ")
+        if prefix == "temperature_fan":
+            await self.gcode(f"SET_TEMPERATURE_FAN_TARGET TEMPERATURE_FAN={name} TARGET={target:g}")
+        else:
+            heater = name or object_name  # extruder, extruder1, heater_bed, or the heater_generic name
+            await self.gcode(f"SET_HEATER_TEMPERATURE HEATER={heater} TARGET={target:g}")
+
 
 async def probe(
     session: aiohttp.ClientSession, host: str, port: int = 7125, api_key: str | None = None

@@ -17,9 +17,11 @@ toolchanger.
 - Material slots: one sensor per gate, CFS slot or toolhead. The state is the material, and the
   attributes hold color, vendor, name and the active flag. CFS units also get temperature and
   humidity sensors.
-- Controls: pause, resume and cancel; lights (output pins and LEDs); and buttons for whichever
-  macros you pick in the options. Emergency stop and firmware restart exist but are disabled by
-  default.
+- Controls: pause, resume, cancel and **emergency stop**; **target temperatures** for every
+  nozzle, the bed and the chamber (heater or chamber temperature fan), limited to each printer's
+  `max_temp`; **fan speed** for client-controllable fans (chamber/exhaust fans, part fan); lights
+  (output pins and LEDs); and buttons for whichever macros you pick in the options. Firmware
+  restart exists but is disabled by default.
 - Cameras from Moonraker's webcam list: MJPEG streams, or snapshot-only cameras for WebRTC and
   other services.
 
@@ -51,7 +53,8 @@ navigation_path: k1-max   # optional: open this view on tap
 The card adapts to each printer. It shows the job ring only while printing. It shows CFS units,
 Happy Hare gates or toolheads with their real filament colors (solid ring = active slot, dashed
 ring = next gate). It shows only the heaters and fans that exist, plus pause, resume, cancel,
-light and your macro buttons. Cancel asks for confirmation.
+light and your macro buttons. Tap a temperature (nozzle, bed, chamber) or a fan to set it with
+presets or an exact value. Cancel and emergency stop ask for confirmation.
 
 ## Install with HACS
 

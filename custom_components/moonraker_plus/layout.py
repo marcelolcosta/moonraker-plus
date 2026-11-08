@@ -18,6 +18,8 @@ from homeassistant.helpers import entity_registry as er
 from .const import CONF_MACROS, DOMAIN
 from .coordinator import MoonrakerConfigEntry
 from .entity import slug
+from .fan import fan_key
+from .number import target_key
 
 CHAMBER_RE = re.compile(r"chamber|cavity|enclosure", re.IGNORECASE)
 # Electronics temperatures: shown separately from print temperatures.
@@ -57,6 +59,7 @@ def build_layout(hass: HomeAssistant, entry: MoonrakerConfigEntry) -> dict[str, 
                     "temperature": eid("sensor", f"{n}_temperature"),
                     "target": eid("sensor", f"{n}_target"),
                     "power": eid("sensor", f"{n}_power"),
+                    "control": eid("number", target_key(n)),
                 }
             )
         elif info.kind in ("temperature", "temperature_fan"):
@@ -68,12 +71,22 @@ def build_layout(hass: HomeAssistant, entry: MoonrakerConfigEntry) -> dict[str, 
                     "system": bool(SYSTEM_RE.search(n)) and not CHAMBER_RE.search(n),
                     "temperature": eid("sensor", f"{n}_temperature"),
                     "target": eid("sensor", f"{n}_target") if info.kind == "temperature_fan" else None,
+                    "control": eid("number", target_key(n)) if info.kind == "temperature_fan" else None,
                 }
             )
             if info.kind == "temperature_fan":
                 fans.append({"object": n, "label": label, "speed": eid("sensor", f"{n}_speed")})
         elif info.kind == "fan":
-            fans.append({"object": n, "label": label, "speed": eid("sensor", f"{n}_speed"), "part": n == "fan"})
+            fans.append(
+                {
+                    "object": n,
+                    "label": label,
+                    "speed": eid("sensor", f"{n}_speed"),
+                    "part": n == "fan",
+                    "chamber": bool(CHAMBER_RE.search(n)) or "exhaust" in n,
+                    "control": eid("fan", fan_key(n)) if info.controllable else None,
+                }
+            )
         elif info.kind == "filament_sensor":
             filament_sensors.append({"object": n, "label": label, "entity": eid("binary_sensor", f"{n}_detected")})
         if (light := eid("light", f"{n}_light")) is not None:

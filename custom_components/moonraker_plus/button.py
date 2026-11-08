@@ -50,7 +50,6 @@ BUTTONS: tuple[MoonrakerButtonDescription, ...] = (
         key="emergency_stop",
         name="Emergency stop",
         icon="mdi:alert-octagon",
-        entity_registry_enabled_default=False,
         press_fn=lambda p: p.emergency_stop(),
     ),
     MoonrakerButtonDescription(
