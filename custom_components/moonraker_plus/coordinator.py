@@ -28,6 +28,7 @@ from .const import (
     UPDATE_THROTTLE_SECONDS,
 )
 from .core.job import JobInfo
+from .events import PrintEventTracker
 from .core.materials import MaterialSystem
 from .core.printer import Printer, PrinterState
 
@@ -64,6 +65,7 @@ class MoonrakerCoordinator(DataUpdateCoordinator[PrinterState]):
         self._reload_scheduled = False
         # go2rtc stream source for a native (non-Moonraker) camera, if any.
         self.native_stream_source: str | None = None
+        self.events = PrintEventTracker(self)
 
     # ------------------------------------------------------------ helpers
     @property
@@ -140,6 +142,7 @@ class MoonrakerCoordinator(DataUpdateCoordinator[PrinterState]):
         self.native_stream_source = await self._detect_native_camera()
         self._signature = self.signature()
         self._last_conn = (self.state.connected, self.state.klippy_state)
+        self.events.prime()
         self.async_set_updated_data(self.state)
 
     async def _detect_native_camera(self) -> str | None:
@@ -171,6 +174,8 @@ class MoonrakerCoordinator(DataUpdateCoordinator[PrinterState]):
     # ------------------------------------------------------------ updates
     @callback
     def _on_printer_update(self, _printer: Printer) -> None:
+        if self._signature is not None:  # setup finished; events.prime() has run
+            self.events.update()
         conn = (self.state.connected, self.state.klippy_state)
         if conn != self._last_conn:
             # Availability changes are pushed immediately.

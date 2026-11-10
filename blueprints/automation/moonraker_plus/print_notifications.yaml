@@ -1,0 +1,137 @@
+blueprint:
+  name: Moonraker Plus - print notifications
+  description: >
+    Sends a Home Assistant Companion app notification when a printer's print starts,
+    pauses (including filament runout), resumes, completes, is cancelled, fails with an
+    error, or Klipper shuts down. Each printer's notifications replace the previous one,
+    and pauses and errors are sent with high priority.
+  domain: automation
+  source_url: https://github.com/marcelolcosta/moonraker-plus/blob/main/blueprints/automation/moonraker_plus/print_notifications.yaml
+  author: marcelolcosta
+  homeassistant:
+    min_version: "2025.2.0"
+  input:
+    printer:
+      name: Printer
+      selector:
+        device:
+          filter:
+            - integration: moonraker_plus
+    notify_device:
+      name: Phone
+      description: Device running the Home Assistant Companion app.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    events:
+      name: Notify on
+      default:
+        - print_completed
+        - print_paused
+        - print_cancelled
+        - print_error
+        - klipper_shutdown
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Print started
+              value: print_started
+            - label: Print paused / filament runout
+              value: print_paused
+            - label: Print resumed
+              value: print_resumed
+            - label: Print completed
+              value: print_completed
+            - label: Print cancelled
+              value: print_cancelled
+            - label: Print error
+              value: print_error
+            - label: Klipper shutdown
+              value: klipper_shutdown
+    image:
+      name: Picture
+      default: thumbnail
+      selector:
+        select:
+          options:
+            - label: Print thumbnail
+              value: thumbnail
+            - label: Camera snapshot
+              value: camera
+            - label: None
+              value: none
+    open_path:
+      name: Open when tapped
+      description: Dashboard path to open, e.g. /dashboard-printers/k1max. Leave empty to open the app.
+      default: ""
+      selector:
+        text:
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: event
+    event_type: moonraker_plus_event
+    event_data:
+      device_id: !input printer
+
+variables:
+  events: !input events
+  image_choice: !input image
+  open_path: !input open_path
+  d: "{{ trigger.event.data }}"
+  file: >-
+    {{ (d.filename or '') | regex_replace('^.*/', '') | regex_replace('[.]gcode$', '', ignorecase=True) }}
+  duration: >-
+    {% set s = d.print_duration | int(0) %}
+    {% set h = s // 3600 %}{% set m = (s % 3600) // 60 %}
+    {{ (h ~ 'h ' if h else '') ~ m ~ 'm' }}
+  urgent: "{{ d.type in ['print_paused', 'print_error', 'klipper_shutdown'] }}"
+  title: >-
+    {% set t = {
+      'print_started': 'started printing',
+      'print_paused': 'paused',
+      'print_resumed': 'resumed printing',
+      'print_completed': 'finished printing',
+      'print_cancelled': 'print cancelled',
+      'print_error': 'print failed',
+      'klipper_shutdown': 'Klipper shut down'} %}
+    {{ d.printer }} {{ t.get(d.type, d.type) }}
+  message: >-
+    {% set pct = (' at ' ~ d.progress ~ '%') if d.progress is number else '' %}
+    {% if d.type == 'print_completed' %}{{ file }} done in {{ duration }}
+    {% elif d.type == 'print_started' %}{{ file }}
+    {% elif d.type == 'print_paused' %}{{ d.message or 'Paused' }}{{ pct }} - {{ file }}
+    {% elif d.type == 'print_resumed' %}{{ file }}{{ pct }}
+    {% elif d.type == 'print_cancelled' %}{{ file }}{{ pct }} after {{ duration }}
+    {% else %}{{ d.message or 'Check the printer' }}{% endif %}
+  picture: >-
+    {% if image_choice == 'thumbnail' and d.thumbnail_entity %}/api/image_proxy/{{ d.thumbnail_entity }}
+    {% elif image_choice == 'camera' and d.camera_entity %}/api/camera_proxy/{{ d.camera_entity }}
+    {% endif %}
+
+  notify_data: >-
+    {% set ns = namespace(data={
+      'tag': 'moonraker_plus_' ~ d.entry_id,
+      'group': 'moonraker_plus',
+      'priority': 'high' if urgent else 'normal',
+      'ttl': 0 if urgent else 3600,
+      'push': {'interruption-level': 'time-sensitive' if urgent else 'active'}}) %}
+    {% if picture | trim %}{% set ns.data = dict(ns.data, image=picture | trim) %}{% endif %}
+    {% if open_path %}{% set ns.data = dict(ns.data, url=open_path, clickAction=open_path) %}{% endif %}
+    {{ ns.data }}
+
+conditions:
+  - condition: template
+    value_template: "{{ d.type in events }}"
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: "{{ title }}"
+    message: "{{ message | trim }}"
+    data: "{{ notify_data }}"

@@ -49,5 +49,16 @@
         }
       }
     }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "print_started": "Print started",
+      "print_paused": "Print paused",
+      "print_resumed": "Print resumed",
+      "print_completed": "Print completed",
+      "print_cancelled": "Print cancelled",
+      "print_error": "Print failed with an error",
+      "klipper_shutdown": "Klipper shut down"
+    }
   }
 }
