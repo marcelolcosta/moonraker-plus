@@ -27,6 +27,7 @@ class JobInfo:
     remaining_file: float | None = None  # seconds, extrapolated from file progress
     remaining_slicer: float | None = None  # seconds, slicer estimate - elapsed
     remaining_filament: float | None = None  # seconds, extrapolated from filament usage
+    remaining_auto: float | None = None  # seconds, weighted blend (KlipperScreen "auto")
     current_layer: int | None = None
     total_layer: int | None = None
     slicer_estimate: float | None = None
@@ -42,9 +43,8 @@ class JobInfo:
         """Best single remaining-time estimate in seconds."""
         if not self.active:
             return None
-        # Early on, file extrapolation is noisy (heat-up, mesh), so prefer the slicer.
-        if self.remaining_file is not None and self.progress and self.progress > 0.05:
-            return self.remaining_file
+        if self.remaining_auto is not None:
+            return self.remaining_auto
         for v in (self.remaining_slicer, self.remaining_file, self.remaining_filament):
             if v is not None:
                 return v
@@ -102,6 +102,43 @@ def best_thumbnail(filename: str | None, meta: dict[str, Any] | None) -> str | N
     return posixpath.normpath(posixpath.join(posixpath.dirname(filename), rel))
 
 
+ESTIMATE_ABOVE = 0.3
+
+
+def estimate_total(
+    progress: float,
+    print_duration: float,
+    file_time: float,
+    filament_time: float,
+    slicer_time: float,
+) -> float:
+    """Estimated total print time, KlipperScreen's "auto" method.
+
+    Up to 30 % trust the slicer; after that blend slicer (fading out), filament and
+    file-position extrapolations, dropping any estimate the print has already outrun.
+    File extrapolation alone runs long because print_duration includes slow first
+    layers and heat-up pauses. Zero means "no estimate".
+    """
+    if progress <= ESTIMATE_ABOVE:
+        for t in (slicer_time, filament_time, file_time):
+            if t > print_duration:
+                return t
+        return slicer_time or filament_time or file_time
+    w_slicer = 1.0 + ESTIMATE_ABOVE - progress if print_duration < slicer_time else 0.0
+    w_filament = min(progress - ESTIMATE_ABOVE, 0.33) if print_duration < filament_time else 0.0
+    w_file = progress - ESTIMATE_ABOVE
+    total = w_slicer + w_filament + w_file
+    if total == 0:
+        return 0.0
+    return (slicer_time * w_slicer + filament_time * w_filament + file_time * w_file) / total
+
+
+def _excluded_ratio(status: dict[str, Any]) -> float:
+    eo = status.get("exclude_object") or {}
+    objects = eo.get("objects") or []
+    return len(eo.get("excluded_objects") or []) / len(objects) if objects else 0.0
+
+
 def compute_job(status: dict[str, Any], meta: dict[str, Any] | None = None) -> JobInfo:
     ps = status.get("print_stats") or {}
     job = JobInfo(
@@ -127,6 +164,16 @@ def compute_job(status: dict[str, Any], meta: dict[str, Any] | None = None) -> J
         if job.slicer_estimate:
             job.remaining_slicer = max(job.slicer_estimate - pd, 0.0)
         ftotal = _num((meta or {}).get("filament_total"))
-        if ftotal and job.filament_used_mm and job.filament_used_mm > 0:
+        if ftotal and job.filament_used_mm and 0 < job.filament_used_mm <= ftotal:
             job.remaining_filament = max(pd / (job.filament_used_mm / ftotal) - pd, 0.0)
+
+        # Blend, scaled for speed override and excluded objects like KlipperScreen.
+        keep = 1.0 - _excluded_ratio(status)
+        speed = _num((status.get("gcode_move") or {}).get("speed_factor")) or 1.0
+        slicer_time = (job.slicer_estimate or 0.0) / math.sqrt(speed) * keep
+        filament_time = (pd + job.remaining_filament) * keep if job.remaining_filament is not None else 0.0
+        file_time = pd / job.progress if job.progress and job.progress > 0 else 0.0
+        total = estimate_total(job.progress or 0.0, pd, file_time, filament_time, slicer_time)
+        if total > 1:
+            job.remaining_auto = max(total - pd, 0.0)
     return job
