@@ -11,9 +11,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
+from . import gcode_meta
 from .client import MoonrakerClient, MoonrakerError
 from .discovery import ObjectInfo, classify, subscribable
 from .job import JobInfo, compute_job
@@ -210,11 +212,32 @@ class Printer:
 
     async def _fetch_metadata(self, filename: str) -> None:
         try:
-            self.state.file_metadata = await self.client.call("server.files.metadata", {"filename": filename})
+            meta = await self.client.call("server.files.metadata", {"filename": filename})
         except MoonrakerError as exc:
             _LOGGER.debug("%s: metadata for %s failed: %s", self.name, filename, exc)
-            self.state.file_metadata = None
+            meta = None
+        self.state.file_metadata = await self._complete_metadata(filename, meta)
         self._notify()
+
+    async def _complete_metadata(self, filename: str, meta: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Fill in estimates Moonraker's parser missed, from the file's summary block or name."""
+        meta = dict(meta or {})
+        wanted = ("estimated_time", "filament_total", "layer_count", "layer_height")
+        if all(meta.get(k) for k in wanted):
+            return meta
+        meta.setdefault("filename", filename)
+        try:
+            tail = await self.client.http_get_tail(f"/server/files/gcodes/{quote(filename)}", gcode_meta.TAIL_BYTES)
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            _LOGGER.debug("%s: reading the end of %s failed: %s", self.name, filename, exc)
+            tail = None
+        if tail:
+            for key, value in gcode_meta.parse_gcode_text(tail.decode("utf-8", "replace")).items():
+                if not meta.get(key):
+                    meta[key] = value
+        if not meta.get("estimated_time") and (t := gcode_meta.time_from_filename(filename)):
+            meta["estimated_time"] = t
+        return meta
 
     # ---------------------------------------------------------- commands
     # All of these raise CommandNotAllowedError unless allow_commands=True.

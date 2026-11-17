@@ -270,5 +270,18 @@ class MoonrakerClient:
             data = await resp.json(content_type=None)
             return data.get("result", data)
 
+    async def http_get_tail(self, path: str, nbytes: int) -> bytes | None:
+        """Last `nbytes` of a file via an HTTP Range request (read-only GET).
+
+        Returns None if the server ignores Range: never download a whole G-code file.
+        """
+        headers = {**self._headers(), "Range": f"bytes=-{nbytes}"}
+        async with self._session.get(
+            f"{self.base_url}{path}", headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+        ) as resp:
+            if resp.status != 206 or (resp.content_length or 0) > nbytes:
+                return None
+            return await resp.read()
+
     def file_url(self, root: str, path: str) -> str:
         return f"{self.base_url}/server/files/{root}/{path}"
